@@ -4,9 +4,9 @@ The project demonstrates how to deploy a web application on AWS by utilising clo
 
 # Architecture Diagrams
 
-![diagram.png]
+![Diagram](diagram.png)
 
-![lambda.png]
+![Lambda](lambda.png)
 
 If a user uploads an image via the web application, the web application stores an image to the s3 in the “uploads/” folder. In the meantime, Amazon SNS is listening to an event when an image is uploaded to the folder and triggers to both AWS Lambda functions. One is for thumbnail generation, and the other one is image captioning.
 
