@@ -1,0 +1,80 @@
+Resources:
+  LambdaDependencyLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: lambda-dependency-layer
+      Description: Common Python packages
+      CompatibleRuntimes:
+        - python3.9
+      Content:
+        S3Bucket: !ImportValue S3BucketName
+        S3Key: python.zip
+
+  LambdaGemini:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: gemini-lambda-handler
+      Handler: lambda.lambda_handler
+      Runtime: python3.9
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/lambda-run-role
+      Code:
+        S3Bucket: !ImportValue S3BucketName
+        S3Key: gemini_lambda.zip
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue PrivateSubnet1
+          - !ImportValue PrivateSubnet2
+        SecurityGroupIds:
+          - !ImportValue EC2SecurityGroup
+      Layers:
+        - !Ref LambdaDependencyLayer
+        - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-pillow:1
+
+  LambdaThumbnail:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: thumbnail-lambda-handler
+      Handler: thumbnail_lambda_handler.lambda_handler
+      Runtime: python3.9
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/lambda-run-role
+      Code:
+        S3Bucket: !ImportValue S3BucketName
+        S3Key: thumbnail_lambda.zip
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue PrivateSubnet1
+          - !ImportValue PrivateSubnet2
+        SecurityGroupIds:
+          - !ImportValue EC2SecurityGroup
+      Layers:
+        - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-pillow:1
+
+  LambdaGeminiSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !ImportValue MySNSTopicArn
+      Endpoint: !GetAtt LambdaGemini.Arn
+
+  LambdaThumbnailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !ImportValue MySNSTopicArn
+      Endpoint: !GetAtt LambdaThumbnail.Arn
+
+  LambdaGeminiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaGemini
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !ImportValue MySNSTopicArn
+
+  LambdaThumbnailPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaThumbnail
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !ImportValue MySNSTopicArn

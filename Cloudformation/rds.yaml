@@ -1,0 +1,65 @@
+Description: RDS Instance in Private Subnets
+
+Parameters:
+  DBInstanceIdentifier:
+    Type: String
+    Default: A2-db
+
+  DBName:
+    Type: String
+    Default: mydb
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    
+Resources:
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: my-db-secret
+      Description: Credentials for RDS database
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin", "dbname": "mydb", "port": "3306", "host": "TODO"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: "\"@/\\'"
+        RequireEachIncludedType: true
+
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !ImportValue PrivateRDS1
+        - !ImportValue PrivateRDS2
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: "8.0.34"
+      MultiAZ: true
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !ImportValue RDSSecurityGroup
+      PubliclyAccessible: false
+      DBName: !Ref DBName
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: Endpoint of the RDS DB instance
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  DBSecretArn:
+    Description: ARN of the DB secret
+    Value: !Ref DBSecret

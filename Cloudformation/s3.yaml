@@ -1,0 +1,82 @@
+Description: S3 bucket for app data, restricted to VPC access
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: a2-cpat0661
+
+Resources:
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: my-vpc-topic
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref MySNSTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref MySNSTopic
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:s3:::${EnvironmentName}-app-bucket"
+
+  AppS3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn: MySNSTopic
+    Properties:
+      BucketName: !Sub "${EnvironmentName}-app-bucket"
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-app-bucket"
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: s3:ObjectCreated:Put
+            Topic: !Ref MySNSTopic
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+  
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowVPCEOnly
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${AppS3Bucket}"
+              - !Sub "arn:aws:s3:::${AppS3Bucket}/*"
+            Condition:
+              StringEquals:
+                aws:SourceVpce: !ImportValue S3VPCEndpoint
+Outputs:
+  S3BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref AppS3Bucket
+    Export:
+      Name: S3BucketName
+
+  S3BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt AppS3Bucket.Arn
+
+  MySNSTopicArn:
+    Description: Arn of SNS Topic
+    Value: !Ref MySNSTopic
+    Export:
+      Name: MySNSTopicArn

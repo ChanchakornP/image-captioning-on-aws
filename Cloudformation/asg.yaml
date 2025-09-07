@@ -1,0 +1,107 @@
+Parameters:
+  InstanceType:
+    Description: Amazon EC2 instance type for the instances
+    Type: String
+    AllowedValues:
+      - t2.micro
+    Default: t2.micro
+  S3Bucket:
+    Type: String
+    Default: a2-cpat0661-app-bucket
+  S3Region:
+    Type: String
+    Default: us-east-1
+  SecretName:
+    Type: String
+    Default: my-db-secret
+  Ec2AmiID:
+    Type: String
+    Default: ami-0bb165a5409133035
+
+Resources:
+  myLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateName: !Sub ${AWS::StackName}-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref Ec2AmiID
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: LabInstanceProfile
+        SecurityGroupIds:
+          - !ImportValue EC2SecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            exec > /var/log/user-data.log 2>&1
+
+            export S3_BUCKET=${S3Bucket}
+            export S3_REGION=${S3Region}
+            export SECRET_NAME=${SecretName}
+            export REGION=${AWS::Region}
+
+            cd /home/ec2-user/app || exit 1
+            flask run --host=0.0.0.0 --port=5000
+
+  myTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !ImportValue VpcID
+      Protocol: HTTP
+      Port: 5000
+      TargetType: instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+
+  myASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref myLaunchTemplate
+        Version: !GetAtt myLaunchTemplate.LatestVersionNumber
+      MaxSize: '2'
+      MinSize: '1'
+      DesiredCapacity: '1'
+      HealthCheckGracePeriod: 300
+      VPCZoneIdentifier:
+        - !ImportValue PrivateSubnet1
+        - !ImportValue PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref myTargetGroup
+
+  myALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-alb
+      Subnets:
+        - !ImportValue PublicSubnet1
+        - !ImportValue PublicSubnet2
+      SecurityGroups:
+        - !ImportValue ALB-SG
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+  MyALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref myTargetGroup
+      LoadBalancerArn: !Ref myALB
+      Port: 80
+      Protocol: HTTP
+
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c02fb55956c7d316
+      KeyName: vockey
+      SubnetId: !ImportValue PublicSubnet1
+      SecurityGroupIds:
+        - !ImportValue BastionHostSG
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion
